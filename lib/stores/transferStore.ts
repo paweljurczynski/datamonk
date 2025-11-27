@@ -259,12 +259,15 @@ export const useTransferStore = create<TransferState>((set, get) => ({
       rev.id === id ? { ...rev, status: decision } : rev
     );
 
+    const targetStatus: JobStatus =
+      decision === "approved" ? "active" : "attention";
+
     const updatedJobs = jobs.map((job) =>
       job.id === review.jobId
         ? {
             ...job,
             aiConfidence: Math.min(99, job.aiConfidence + 6),
-            status: decision === "approved" ? "active" : "attention",
+            status: targetStatus,
           }
         : job
     );
