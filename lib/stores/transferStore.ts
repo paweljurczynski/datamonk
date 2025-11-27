@@ -1,6 +1,6 @@
 'use client';
 
-import { GetState, SetState, create } from "zustand";
+import { create } from "zustand";
 
 type JobStatus = "active" | "paused" | "queued" | "attention";
 
@@ -287,11 +287,9 @@ export const useTransferStore = create<TransferState>((set, get) => ({
   },
 }));
 
-const maybeQueueReview = (
-  jobs: TransferJob[],
-  set: SetState<TransferState>,
-  get: GetState<TransferState>
-) => {
+type Setter = (fn: (state: TransferState) => TransferState | Partial<TransferState>) => void;
+
+const maybeQueueReview = (jobs: TransferJob[], set: Setter, get: () => TransferState) => {
   const attentionJob = jobs.find(
     (job) => job.aiConfidence < 78 && !get().reviews.some((rev) => rev.jobId === job.id)
   );
