@@ -1,64 +1,180 @@
-import Image from "next/image";
+'use client';
+
+import { useMemo, useState, useEffect } from "react";
+import { ShieldAlert, Sparkles, Timer } from "lucide-react";
+
+import { AppHeader } from "@/components/dashboard/AppHeader";
+import { KpiCard } from "@/components/dashboard/KpiCard";
+import { SideStats } from "@/components/dashboard/SideStats";
+import { TransferTable } from "@/components/dashboard/TransferTable";
+import { JobDetailPanel } from "@/components/dashboard/JobDetailPanel";
+import { ReviewQueue } from "@/components/dashboard/ReviewQueue";
+import { MOCK_JOBS, MOCK_REVIEWS, MOCK_TREND, type ReviewWithLabel } from "@/lib/mocks/transfer";
+import type { TransferJob } from "@/lib/stores/transferStore";
+
+const computeKpis = (jobs: TransferJob[]) => {
+  const totalMigrated = jobs.reduce((sum, job) => sum + job.migratedTb, 0);
+  const totalPlanned = jobs.reduce((sum, job) => sum + job.totalTb, 0);
+  const avgThroughput =
+    jobs.reduce((sum, job) => sum + job.throughputMbps, 0) / Math.max(1, jobs.length);
+  const weightedEta =
+    jobs.reduce((sum, job) => sum + job.etaDays * job.totalTb, 0) / Math.max(1, totalPlanned);
+
+  return {
+    completion: Math.round((totalMigrated / Math.max(1, totalPlanned)) * 100),
+    totalMigrated,
+    avgThroughput: Math.round(avgThroughput),
+    etaDays: Math.max(1, Math.round(weightedEta)),
+  };
+};
 
 export default function Home() {
+  const [jobs, setJobs] = useState<TransferJob[]>(MOCK_JOBS);
+  const [reviews, setReviews] = useState<ReviewWithLabel[]>(MOCK_REVIEWS);
+  const [selectedJob, setSelectedJob] = useState<string>(MOCK_JOBS[0]?.id);
+  const [retrainCount, setRetrainCount] = useState(0);
+  const [retrainingActive, setRetrainingActive] = useState(false);
+
+  const { completion, totalMigrated, avgThroughput, etaDays } = useMemo(
+    () => computeKpis(jobs),
+    [jobs]
+  );
+
+  const aiConfidence = useMemo(() => {
+    if (!jobs.length) return 0;
+    return Math.round(jobs.reduce((sum, job) => sum + job.aiConfidence, 0) / jobs.length);
+  }, [jobs]);
+
+  const pendingReviews = reviews.filter((rev) => rev.status === "pending").length;
+
+  useEffect(() => {
+    if (!retrainingActive) return;
+    const timer = window.setTimeout(() => setRetrainingActive(false), 2400);
+    return () => window.clearTimeout(timer);
+  }, [retrainingActive]);
+
+  const handleToggleJob = (id: string) =>
+    setJobs((prev) =>
+      prev.map((job) =>
+        job.id === id
+          ? {
+              ...job,
+              status: job.status === "paused" ? "active" : "paused",
+            }
+          : job
+      )
+    );
+
+  const handleBoostJob = (id: string) =>
+    setJobs((prev) =>
+      prev.map((job) =>
+        job.id === id
+          ? {
+              ...job,
+              priority: "boosted",
+              throughputMbps: Math.min(1200, Math.round(job.throughputMbps * 1.15)),
+            }
+          : job
+      )
+    );
+
+  const handleReviewDecision = (id: string, decision: "approved" | "rejected") => {
+    const review = reviews.find((rev) => rev.id === id);
+    if (!review) return;
+
+    setReviews((prev) =>
+      prev.map((rev) => (rev.id === id ? { ...rev, status: decision } : rev))
+    );
+
+    setJobs((prev) =>
+      prev.map((job) =>
+        job.id === review.jobId
+          ? {
+              ...job,
+              aiConfidence: Math.min(99, job.aiConfidence + (decision === "approved" ? 6 : -4)),
+              status: decision === "approved" ? "active" : "attention",
+            }
+          : job
+      )
+    );
+
+    setRetrainCount((count) => count + 1);
+    setRetrainingActive(true);
+  };
+
+  const currentJob = jobs.find((job) => job.id === selectedJob) ?? jobs[0];
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(255,160,88,0.18),_transparent_50%),#fdf8f3]">
+      <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pb-16 pt-10 lg:flex-row lg:px-10">
+        <div className="flex-1 space-y-6">
+          <AppHeader
+            completion={completion}
+            totalMigrated={totalMigrated}
+            avgThroughput={avgThroughput}
+            etaDays={etaDays}
+            retrainingActive={retrainingActive}
+            retrainCount={retrainCount}
+          />
+
+          <section className="monk-grid">
+            <KpiCard
+              title="Jobs Online"
+              value={`${jobs.length} ingest streams`}
+              meta="Across 12 facilities"
+              icon={<Timer className="h-5 w-5" />}
+              trend={{
+                direction: "up",
+                value: "+3",
+                label: "vs last week",
+              }}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            <KpiCard
+              title="AI Confidence"
+              value={`${aiConfidence}%`}
+              meta="Auto triage threshold 80%"
+              icon={<Sparkles className="h-5 w-5" />}
+              trend={{
+                direction: aiConfidence >= 85 ? "up" : "down",
+                value: `${aiConfidence >= 85 ? "+" : "-"}${Math.abs(aiConfidence - 85)}%`,
+                label: "vs target",
+              }}
+            />
+            <KpiCard
+              title="Needs Review"
+              value={`${pendingReviews} scans`}
+              meta="Long-haul QA queue"
+              icon={<ShieldAlert className="h-5 w-5" />}
+              trend={{
+                direction: "down",
+                value: "-12%",
+                label: "since midnight",
+              }}
+            />
+          </section>
+
+          <section>
+            <TransferTable
+              jobs={jobs}
+              selectedJobId={selectedJob}
+              onSelect={setSelectedJob}
+              onToggle={handleToggleJob}
+              onBoost={handleBoostJob}
+            />
+          </section>
+
+          <section className="grid gap-6 lg:grid-cols-2">
+            <JobDetailPanel job={currentJob} onToggle={handleToggleJob} onBoost={handleBoostJob} />
+            <ReviewQueue
+              reviews={reviews}
+              confidenceTrend={MOCK_TREND}
+              onDecision={handleReviewDecision}
+            />
+          </section>
         </div>
+        <aside className="lg:w-[320px]">
+          <SideStats jobs={jobs} />
+        </aside>
       </main>
     </div>
   );
